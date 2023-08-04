@@ -20,6 +20,7 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 const version = 32
@@ -54,15 +55,12 @@ type Client struct {
 
 // NewClient establishes a connection to the PulseAudio server.
 func NewClient(addressArr ...string) (*Client, error) {
-	if len(addressArr) < 1 {
-		rtp, err := RuntimePath("native")
-		if err != nil {
-			return nil, err
-		}
-		addressArr = []string{rtp}
+	network, address, err := getConnectionDetails(addressArr...)
+	if err != nil {
+		return nil, err
 	}
 
-	conn, err := net.Dial("unix", addressArr[0])
+	conn, err := net.Dial(network, address)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +87,31 @@ func NewClient(addressArr ...string) (*Client, error) {
 	}
 
 	return c, nil
+}
+
+func getConnectionDetails(addressArr ...string) (string, string, error) {
+	if len(addressArr) >= 1 {
+		return "unix", addressArr[0], nil
+	}
+
+	// PULSE_SERVER defines where the server is.
+	// It takes a protocol prefix like unix: or tcp: followed by the path or IP of the server.
+	// Example: unix:/home/pulse/native-sock.
+	serverEnv := os.Getenv("PULSE_SERVER")
+	if serverEnv != "" {
+		parts := strings.SplitN(serverEnv, ":", 2)
+		if len(parts) == 2 {
+			return parts[0], parts[1], nil
+		} else {
+			return "", "", fmt.Errorf("Invalid PULSE_SERVER: %s", serverEnv)
+		}
+	}
+
+	rtp, err := RuntimePath("native")
+	if err != nil {
+		return "", "", err
+	}
+	return "unix", rtp, nil
 }
 
 const frameSizeMaxAllow = 1024 * 1024 * 16
